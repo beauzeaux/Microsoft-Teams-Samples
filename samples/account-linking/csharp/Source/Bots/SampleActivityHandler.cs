@@ -87,8 +87,8 @@ public sealed class SampleActivityHandler<TDialog> : TeamsActivityHandler where 
                             new CardAction
                             {
                                 Type = ActionTypes.OpenUrl,
-                                Value = needsConsentResult.RedirectUri.ToString(),
-                                Title = "Please log into GitHub",
+                                Value = needsConsentResult.RedirectUri,
+                                Title = "Please login to GitHub",
                             },
                         },
                     },
