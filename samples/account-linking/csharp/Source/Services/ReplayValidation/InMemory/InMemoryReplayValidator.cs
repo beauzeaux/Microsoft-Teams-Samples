@@ -23,12 +23,19 @@ public sealed class InMemoryReplayValidator : IReplayValidator
     {
         _logger.LogInformation("Checking if token [{id}] is a replay", jti);
         await _semaphore.WaitAsync();
-        if (!this.seenTokens.Contains(jti))
+        // bit of an abuse of the 'try/finally' concept but helps prevent missing `Release`
+        try
         {
-            this.seenTokens.Add(jti);
-            return true;
+            if (!this.seenTokens.Contains(jti))
+            {
+                this.seenTokens.Add(jti);
+                return true;
+            }
+            return false;
         }
-        _semaphore.Release();
-        return false;
+        finally
+        {
+            _semaphore.Release();
+        }
     }
 }
