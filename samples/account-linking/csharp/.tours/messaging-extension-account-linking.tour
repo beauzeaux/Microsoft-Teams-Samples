@@ -3,13 +3,13 @@
   "title": "Messaging Extension Account Linking",
   "steps": [
     {
-      "file": "Source/Bots/SampleActivityHandler.cs",
+      "file": "./samples/account-linking/csharp/Source/Bots/SampleActivityHandler.cs",
       "description": "Account linking with messaging extensions is a bit easier than tabs. For this sample, we demonstrate how to do this with a [messaging extension search command](https://docs.microsoft.com/en-us/microsoftteams/platform/messaging-extensions/how-to/search-commands/define-search-command). \r\n\r\nThe flow will be nearly identical with all messaging extensions so this should be adaptable for [action commands](https://docs.microsoft.com/en-us/microsoftteams/platform/messaging-extensions/how-to/action-commands/define-action-command?tabs=AS) or [link unfurling](https://docs.microsoft.com/en-us/microsoftteams/platform/messaging-extensions/how-to/link-unfurling?tabs=dotnet).",
       "line": 65
     },
     {
-      "file": "Source/Bots/SampleActivityHandler.cs",
-      "description": "As before we get the user's id (Azure Ad id, not Bot Framework id) and their tenant id. Unlike in the tab flow, these two values are trustworthy in the inbound payload so we don't need an Azure AD access token to authenticate the user.\r\n\r\n",
+      "file": "./samples/account-linking/csharp/Source/Bots/SampleActivityHandler.cs",
+      "description": "As before we get the user's id (Azure Ad id, not Bot Framework id) and their tenant id. Unlike in the tab flow, these two values are trustworthy because they are sent from BotFramework in the inbound payload so we don't need an Azure AD access token to authenticate the user.\r\n\r\n",
       "line": 71,
       "selection": {
         "start": {
@@ -23,8 +23,8 @@
       }
     },
     {
-      "file": "Source/Bots/SampleActivityHandler.cs",
-      "description": "First, lets trace what will happen when the user hasn't linked their GitHub account. The `OAuthTokenProvider` described in the [Token Storage][#Token Storage] tour will return a `NeedsConsentResult` if it cannot find the user's token in its database. ",
+      "file": "./samples/account-linking/csharp/Source/Bots/SampleActivityHandler.cs",
+      "description": "First, lets trace what will happen when the user hasn't linked their GitHub account. The `OAuthTokenProvider` described in the [Token Storage Tour][#Token Storage] tour will return a `NeedsConsentResult` if it cannot find the user's token in its database. ",
       "line": 73,
       "selection": {
         "start": {
@@ -38,8 +38,8 @@
       }
     },
     {
-      "file": "Source/Bots/SampleActivityHandler.cs",
-      "description": "We then return back an `\"auth\"` result with a single `OpenUrl` action that redirects the user-agent to the `/oauth/start` action on the `OAuthController` when the click the `sign in` link. \r\n\r\n![Image of a search auth prompt](./Docs/Images/SearchAuthPrompt.jpg)\r\n",
+      "file": "./samples/account-linking/csharp/Source/Bots/SampleActivityHandler.cs",
+      "description": "We then return back an `\"auth\"` result with a single `OpenUrl` action that redirects the user-agent to the `/oauth/start` action on the `OAuthController` when the click the `sign in` link. \r\n\r\n![Image of a search auth prompt](./samples/account-linking/csharp/Docs/Images/SearchAuthPrompt.jpg)\r\n",
       "line": 96,
       "selection": {
         "start": {
@@ -53,8 +53,8 @@
       }
     },
     {
-      "file": "Source/Controllers/OAuthController.cs",
-      "description": "# Redirecting to the GitHub Authorization page\r\nThe request to `/oauth/start` lands here and we now just redirect the user-agent to the configured `AuthorizeUrl` which in this instance would be `https://github.com/login/oauth/authorize`\r\n\r\nNote, we also configure the `redirect_uri` so that it will hit the `/oauth/end` action later in this file. \r\n\r\nThis will redirect the auth popup to the GitHub login page if the user isn't currently logged in, or the authorization page if they need to consent to this application accessing their repositories.\r\n![Image of the GitHub login page inside of a popup over the Microsoft Teams tab](./Docs/Images/GitHubAuthorize.jpg)",
+      "file": "./samples/account-linking/csharp/Source/Controllers/OAuthController.cs",
+      "description": "# Redirecting to the GitHub Authorization page\r\nThe request to `/oauth/start` lands here and we now just redirect the user-agent to the configured `AuthorizeUrl` which in this instance would be `https://github.com/login/oauth/authorize`\r\n\r\nNote, we also configure the `redirect_uri` so that it will hit the `/oauth/end` action later in this file. \r\n\r\nThis will redirect the auth popup to the GitHub login page if the user isn't currently logged in, or the authorization page if they need to consent to this application accessing their repositories.\r\n![Image of the GitHub login page inside of a popup over the Microsoft Teams tab](./samples/account-linking/csharp/Docs/Images/GitHubAuthorize.jpg)",
       "line": 46,
       "selection": {
         "start": {
@@ -68,17 +68,17 @@
       }
     },
     {
-      "file": "Source/Controllers/OAuthController.cs",
+      "file": "./samples/account-linking/csharp/Source/Controllers/OAuthController.cs",
       "description": "# Handling the GitHub redirect\r\nAfter the user completes the authorization, we now complete the [Authorization code grant flow](https://datatracker.ietf.org/doc/html/rfc6749#section-4.1) by exchanging the `code` we received from GitHub for the access and refresh tokens. The `tokenProvider` encapsulates this behavior which we explore in the [token storage tour][Token Storage]",
       "line": 66
     },
     {
-      "file": "Source/Controllers/OAuthController.cs",
+      "file": "./samples/account-linking/csharp/Source/Controllers/OAuthController.cs",
       "description": "We then return to the popup the `authEnd` page in the `wwwroot` folder so that we can notify Teams that the login flow is complete and close the popup. ",
       "line": 69
     },
     {
-      "file": "Source/wwwroot/authEnd.js",
+      "file": "./samples/account-linking/csharp/Source/wwwroot/authEnd.js",
       "description": "We then call the `notifySuccess` method in the authEnd page to signal to Teams that the login in complete. This will trigger another invoke request to our search message extension.",
       "line": 14,
       "selection": {
@@ -93,13 +93,13 @@
       }
     },
     {
-      "file": "Source/Bots/SampleActivityHandler.cs",
+      "file": "./samples/account-linking/csharp/Source/Bots/SampleActivityHandler.cs",
       "description": "The search query will again attempt to fetch the access token. This time, however, it will succeed with an `AccessTokenResult` which we can use to call the GitHub API. ",
       "line": 73
     },
     {
-      "file": "Source/Bots/SampleActivityHandler.cs",
-      "description": "Now with the access token we can make a request to the downstream GitHub API to get the list of the user's repositories. \r\n\r\nThis is then transformed into a `MessagingExtensionResponse` to display the repositories in the messaging extension.\r\n\r\n![Image of messaging extension result in Microsoft Teams listing the users repositories](./Docs/Images/SearchResult.jpg)",
+      "file": "./samples/account-linking/csharp/Source/Bots/SampleActivityHandler.cs",
+      "description": "Now with the access token we can make a request to the downstream GitHub API to get the list of the user's repositories. \r\n\r\nThis is then transformed into a `MessagingExtensionResponse` to display the repositories in the messaging extension.\r\n\r\n![Image of messaging extension result in Microsoft Teams listing the users repositories](./samples/account-linking/csharp/Docs/Images/SearchResult.jpg)",
       "line": 100
     }
   ],
