@@ -1,8 +1,11 @@
+using System.Web;
 using Microsoft.Bot.Builder;
 using Microsoft.Bot.Builder.Dialogs;
 using Microsoft.Bot.Schema;
 using Microsoft.Extensions.Options;
 using Microsoft.Teams.Samples.AccountLinking.OAuth;
+using Newtonsoft.Json;
+using Newtonsoft.Json.Linq;
 
 namespace Microsoft.Teams.Samples.AccountLinking.Dialogs;
 
@@ -17,6 +20,7 @@ public sealed class AccountLinkingPrompt : Dialog
 {
     private const string ExpirationKey = "expires";
     private const string CardActivityKey = "cardActivity";
+    private const string CodeVerifierKey = "codeVerifier";
 
     private readonly ILogger<AccountLinkingPrompt> _logger;
     private readonly AccountLinkingPromptOptions _options;
@@ -50,8 +54,21 @@ public sealed class AccountLinkingPrompt : Dialog
 
         // Attempt to get the users token
         var tokenResult = await _oauthTokenProvider.GetAccessTokenAsync(tenantId: tenantId, userId: userId);
-        if (tokenResult is NeedsConsentResult needsConsentResult)
+        if (tokenResult is NeedsConsentResult)
         {
+            var (codeChallenge, codeVerifier) = Pkce.GeneratePkceCodes();
+            var consentUri = await _oauthTokenProvider.GetConsentUriAsync(
+                tenantId: tenantId,
+                userId: userId,
+                codeChallenge: codeChallenge);
+            var queryParams = HttpUtility.ParseQueryString(consentUri.Query);
+            queryParams.Add("state", codeChallenge); // For bot we'll just use the codeChallenge as the 'state'
+            var loginConsentUri = new UriBuilder(consentUri)
+            {
+                Query = queryParams.ToString()
+            }; 
+            // we can keep the code verifier out of the 
+            state[CodeVerifierKey] = codeVerifier;
             var activity = MessageFactory.Attachment(new Attachment
             {
                 ContentType = SigninCard.ContentType,
@@ -64,6 +81,7 @@ public sealed class AccountLinkingPrompt : Dialog
                         {
                             Title = "Sign in",
                             Type = ActionTypes.Signin,
+                            Value = loginConsentUri.ToString()
                         },
                     },
                 },
@@ -85,6 +103,8 @@ public sealed class AccountLinkingPrompt : Dialog
     public override async Task<DialogTurnResult> ContinueDialogAsync(DialogContext dc, CancellationToken cancellationToken = default)
     {
         dc = dc ?? throw new ArgumentNullException(nameof(dc));
+        var userId = dc.Context.Activity.From.AadObjectId;
+        var tenantId = dc.Context.Activity.Conversation.TenantId;
 
         // Check for timeout
         var state = dc.ActiveDialog.State;
@@ -93,7 +113,7 @@ public sealed class AccountLinkingPrompt : Dialog
 
         // If the incoming Activity is a message, or an Activity Type normally handled by OAuthPrompt,
         // check to see if this OAuthPrompt Expiration has elapsed, and end the dialog if so.
-
+        var isTokenResponse = IsTokenResponseEvent(dc.Context);
         var isTimeoutActivityType = isMessage || IsTokenResponseEvent(dc.Context);
         var hasTimedOut = isTimeoutActivityType && DateTimeOffset.UtcNow >= expires;
 
@@ -104,8 +124,29 @@ public sealed class AccountLinkingPrompt : Dialog
             return await dc.EndDialogAsync(cancellationToken: cancellationToken).ConfigureAwait(false);
         }
 
-        var userId = dc.Context.Activity.From.AadObjectId;
-        var tenantId = dc.Context.Activity.Conversation.TenantId;
+        if (isTokenResponse)
+        {
+            _logger.LogInformation("Detected token response, attempting to complete auth flow");
+            var value = dc.Context.Activity.Value as JObject;
+            var stateString = value?.GetValue("state")?.ToString() ?? string.Empty;
+            var accessTokenResult = JsonConvert.DeserializeObject<AuthResponse>(stateString);
+            var codeVerifier = state[CodeVerifierKey] as string ?? string.Empty;
+            var expectedState = Pkce.Base64UrlEncodeSha256(codeVerifier);
+            if (!string.Equals(accessTokenResult.State, expectedState))
+            {
+                // The state returned doesn't match the expected. potentially a forgery attempt.
+                _logger.LogWarning("Potential forgery attempt: {expectedState} | {actualState} | {verifier}", expectedState, accessTokenResult.State, codeVerifier);
+                return await dc.EndDialogAsync(cancellationToken: cancellationToken).ConfigureAwait(false);
+            }
+
+            // Now claim the oauth code
+            await _oauthTokenProvider.ClaimTokenAsync(
+                state: accessTokenResult.Code,
+                tenantId: tenantId,
+                userId: userId,
+                codeVerifier: codeVerifier
+            );
+        }
 
         var tokenResult = await _oauthTokenProvider.GetAccessTokenAsync(tenantId: tenantId, userId: userId);
         if (tokenResult is NeedsConsentResult)
@@ -136,7 +177,7 @@ public sealed class AccountLinkingPrompt : Dialog
     private static bool IsTokenResponseEvent(ITurnContext turnContext)
     {
         var activity = turnContext.Activity;
-        return activity.Type == ActivityTypes.Event && activity.Name == SignInConstants.TokenResponseEventName;
+        return activity.Type == ActivityTypes.Invoke && activity.Name == SignInConstants.VerifyStateOperationName;
     }
 
 }

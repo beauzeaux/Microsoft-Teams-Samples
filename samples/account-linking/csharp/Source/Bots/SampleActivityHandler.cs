@@ -168,12 +168,3 @@ public sealed class SampleActivityHandler<TDialog> : TeamsActivityHandler where 
         await _dialog.RunAsync(turnContext, _botState.CreateProperty<DialogState>(nameof(DialogState)), cancellationToken);
     }
 }
-
-public class AuthResponse
-{
-    [JsonPropertyName("state")]
-    public string State { get; set; } = string.Empty;
-
-    [JsonPropertyName("code")]
-    public string Code { get; set; } = string.Empty;
-}
