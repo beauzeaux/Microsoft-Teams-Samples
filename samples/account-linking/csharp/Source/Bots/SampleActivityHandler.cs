@@ -5,6 +5,10 @@ using Microsoft.Bot.Schema;
 using Microsoft.Bot.Schema.Teams;
 using Microsoft.Teams.Samples.AccountLinking.OAuth;
 using Microsoft.Teams.Samples.AccountLinking.GitHub;
+using Microsoft.AspNetCore.DataProtection;
+using System.Web;
+using System.Text.Json;
+using System.Text.Json.Serialization;
 
 namespace Microsoft.Teams.Samples.AccountLinking.Bots;
 
@@ -29,13 +33,16 @@ public sealed class SampleActivityHandler<TDialog> : TeamsActivityHandler where 
 
     private readonly OAuthTokenProvider _oAuthTokenProvider;
 
+    private readonly IDataProtector _dataProtector;
+
     public SampleActivityHandler(
         ILogger<SampleActivityHandler<TDialog>> logger,
         TDialog dialog,
         OAuthTokenProvider oAuthTokenProvider,
         GitHubServiceClient gitHubServiceClient,
         ConversationState botState,
-        UserState userState) : base()
+        UserState userState,
+        IDataProtectionProvider dataProtectionProvider) : base()
     {
         _logger = logger;
         _gitHubServiceClient = gitHubServiceClient;
@@ -43,6 +50,7 @@ public sealed class SampleActivityHandler<TDialog> : TeamsActivityHandler where 
         _dialog = dialog;
         _botState = botState;
         _userState = userState;
+        _dataProtector = dataProtectionProvider.CreateProtector(nameof(SampleActivityHandler<TDialog>));
     }
 
     protected override async Task OnMessageActivityAsync(
@@ -69,12 +77,41 @@ public sealed class SampleActivityHandler<TDialog> : TeamsActivityHandler where 
     {
         var userId = turnContext.Activity.From.AadObjectId;
         var tenantId = turnContext.Activity.Conversation.TenantId;
+
+        if (!string.IsNullOrEmpty(query.State))
+        {
+            var authResponseObject = JsonSerializer.Deserialize<AuthResponse>(query.State);
+            if (authResponseObject == default)
+            {
+                _logger.LogWarning("Invalid state object provided: {state}", query.State);
+                throw new Exception("Invalid state format");
+            }
+            _logger.LogInformation("Params:\nState: {state}\nCode: {code}", authResponseObject.State, authResponseObject.Code);
+            var codeVerifier = _dataProtector.Unprotect(authResponseObject.State);
+            await _oAuthTokenProvider.ClaimTokenAsync(
+                state: authResponseObject.Code, // these are inverted because
+                codeVerifier: codeVerifier,
+                tenantId: tenantId,
+                userId: userId);
+        }
+        
         // Attempt to retrieve the github token
         var tokenResult = await _oAuthTokenProvider.GetAccessTokenAsync(tenantId: tenantId, userId: userId);
 
-        if (tokenResult is NeedsConsentResult needsConsentResult)
+        if (tokenResult is NeedsConsentResult)
         {
             _logger.LogInformation("Messaging Extension query with no GitHub token, sending login prompt");
+            var (codeChallenge, codeVerifier) = Pkce.GeneratePkceCodes();
+            var consentUri = await _oAuthTokenProvider.GetConsentUriAsync(
+                tenantId: tenantId,
+                userId: userId,
+                codeChallenge: codeChallenge);
+            var queryParams = HttpUtility.ParseQueryString(consentUri.Query);
+            queryParams.Add("state", _dataProtector.Protect(codeVerifier));
+            var loginConsentUri = new UriBuilder(consentUri)
+            {
+                Query = queryParams.ToString()
+            };
             return new MessagingExtensionResponse
             {
                 ComposeExtension = new MessagingExtensionResult
@@ -88,6 +125,7 @@ public sealed class SampleActivityHandler<TDialog> : TeamsActivityHandler where 
                             {
                                 Type = ActionTypes.OpenUrl,
                                 Title = "Please login to GitHub",
+                                Value = loginConsentUri.ToString()
                             },
                         },
                     },
@@ -129,4 +167,13 @@ public sealed class SampleActivityHandler<TDialog> : TeamsActivityHandler where 
         // Run the Dialog with the new Invoke Activity.
         await _dialog.RunAsync(turnContext, _botState.CreateProperty<DialogState>(nameof(DialogState)), cancellationToken);
     }
+}
+
+public class AuthResponse
+{
+    [JsonPropertyName("state")]
+    public string State { get; set; } = string.Empty;
+
+    [JsonPropertyName("code")]
+    public string Code { get; set; } = string.Empty;
 }

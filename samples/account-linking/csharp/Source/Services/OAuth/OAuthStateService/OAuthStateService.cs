@@ -1,12 +1,8 @@
-using Microsoft.Extensions.Logging;
 using Microsoft.AspNetCore.DataProtection;
 using System.Text.Json;
 using Microsoft.Extensions.Options;
 
 using Microsoft.Teams.Samples.AccountLinking.ReplayValidation;
-using System.Text;
-using System.Security.Cryptography;
-using Microsoft.IdentityModel.Tokens;
 
 namespace Microsoft.Teams.Samples.AccountLinking.OAuth;
 
@@ -98,7 +94,7 @@ public sealed class OAuthStateService<TState> where TState : class?
 
         // transform the code verifier and check it against the codeChallenge
         // See: https://datatracker.ietf.org/doc/html/rfc7636
-        var transformedVerifier = Base64UrlEncodeSha256(codeVerifier);
+        var transformedVerifier = Pkce.Base64UrlEncodeSha256(codeVerifier);
         if (!string.Equals(stateObject.CodeChallenge, transformedVerifier, StringComparison.Ordinal))
         {
             _logger.LogWarning("Failed to code verifier invalid: [{challenge}] [{provided}] [{tProvided}]", stateObject.CodeChallenge, codeVerifier, transformedVerifier);
@@ -113,12 +109,5 @@ public sealed class OAuthStateService<TState> where TState : class?
         }
 
         return stateObject.State;
-    }
-
-    public static string Base64UrlEncodeSha256(string value)
-    {
-        using var hash = SHA256.Create();
-        var hashBytes = hash.ComputeHash(Encoding.ASCII.GetBytes(value));
-        return Base64UrlEncoder.Encode(hashBytes);
     }
 }
