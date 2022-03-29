@@ -13,7 +13,7 @@ public sealed class OAuthTokenProvider
 {
     private readonly ILogger<OAuthTokenProvider> _logger;
 
-    private readonly OAuthStateService _oAuthStateService;
+    private readonly OAuthStateService<OAuthStateObject> _oAuthStateService;
 
     private readonly OAuthServiceClient _oAuthServiceClient;
 
@@ -24,7 +24,7 @@ public sealed class OAuthTokenProvider
     public OAuthTokenProvider(
         ILogger<OAuthTokenProvider> logger,
         IOptions<OAuthOptions> options,
-        OAuthStateService oAuthStateService,
+        OAuthStateService<OAuthStateObject> oAuthStateService,
         OAuthServiceClient oAuthServiceClient,
         IUserTokenStore userTokenStore)
     {
@@ -35,20 +35,37 @@ public sealed class OAuthTokenProvider
         _userTokenStore = userTokenStore;
     }
 
+    public async Task<Uri> GetConsentUriAsync(string tenantId, string userId, string codeChallenge)
+    {
+        var state = await _oAuthStateService.CreateStateAsync(
+            subject: Subject(tenantId: tenantId, userId: userId),
+            codeChallenge: codeChallenge,
+            initialState: new OAuthStateObject());
+        NameValueCollection queryParameters = HttpUtility.ParseQueryString(string.Empty);
+        queryParameters.Add("tokenState", state);
+        var redirectUri = new UriBuilder(_options.AuthStartUri)
+        {
+            Query = queryParameters.ToString(),
+            Port = -1 // Otherwise the ToString will include the port number?
+        };
+
+        return redirectUri.Uri;
+    }
+
     public async Task<AccessTokenResultBase> GetAccessTokenAsync(string tenantId, string userId)
     {
         var tokenDtoString = await _userTokenStore.GetTokenAsync(tenantId, userId);
         if (tokenDtoString == default)
         {
             _logger.LogInformation("Underlying store contained no token, returning null");
-            return await GetNeedsConsentResultAsync(tenantId: tenantId, userId: userId);
+            return new NeedsConsentResult();
         }
 
         var tokenDto = JsonSerializer.Deserialize<OAuthUserTokenDto>(tokenDtoString);
         if (tokenDto == default)
         {
             _logger.LogWarning("Token stored was valid json, but not valid DTO! Did the schema change?");
-            return await GetNeedsConsentResultAsync(tenantId: tenantId, userId: userId);
+            return new NeedsConsentResult();
         }
 
         _logger.LogInformation(
@@ -69,7 +86,7 @@ public sealed class OAuthTokenProvider
         var jsonBody = await _oAuthServiceClient.RefreshAccessTokenAsync(tokenDto.RefreshToken);
         if (jsonBody == default)
         {
-            return await GetNeedsConsentResultAsync(tenantId: tenantId, userId: userId);
+            return new NeedsConsentResult();
         }
 
         string accessToken = jsonBody.AccessToken;
@@ -96,10 +113,20 @@ public sealed class OAuthTokenProvider
         };
     }
 
-    public async Task ClaimTokenAsync(string state, string code)
+    public async Task ClaimTokenAsync(string state, string tenantId, string userId, string codeVerifier)
     {
-        var (userId, tenantId) = await _oAuthStateService.VerifyAsync(state);
-        var oAuthResult = await _oAuthServiceClient.ClaimCodeAsync(code);
+        var mutableState = await _oAuthStateService.GetMutableStateAsync(state);
+        if (string.IsNullOrEmpty(mutableState?.OAuthCode))
+        {
+            throw new Exception("Missing or invalid oauth code, cannot claim");
+        }
+
+        await _oAuthStateService.VerifyAsync(
+            state: state,
+            subject: Subject(tenantId: tenantId, userId: userId),
+            codeVerifier: codeVerifier);
+
+        var oAuthResult = await _oAuthServiceClient.ClaimCodeAsync(mutableState.OAuthCode);
         
         var dto = new OAuthUserTokenDto
         {
@@ -118,28 +145,16 @@ public sealed class OAuthTokenProvider
         await _userTokenStore.DeleteTokenAsync(tenantId: tenantId, userId: userId);
     }
 
-    private async Task<NeedsConsentResult> GetNeedsConsentResultAsync(string tenantId, string userId)
+    private static string Subject(string tenantId, string userId)
     {
-        var state = await _oAuthStateService.GetStateAsync(tenantId: tenantId, userId: userId);
-        NameValueCollection queryParameters = HttpUtility.ParseQueryString(string.Empty);
-        queryParameters.Add("state", state);
-        var redirectUri = new UriBuilder(_options.AuthStartUri)
-        {
-            Query = queryParameters.ToString(),
-            Port = -1 // Otherwise the ToString will include the port number?
-        };
-        return new NeedsConsentResult
-        {
-            RedirectUri = redirectUri.ToString(),
-        };
-    } 
+        return $"{tenantId}_{userId}";
+    }
 }
 
 public abstract class AccessTokenResultBase {}
 
 public sealed class NeedsConsentResult : AccessTokenResultBase
 {
-    public string RedirectUri { get; set; } = string.Empty;
 }
 
 public sealed class AccessTokenResult : AccessTokenResultBase

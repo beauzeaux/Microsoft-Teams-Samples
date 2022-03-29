@@ -4,17 +4,17 @@ const teamsPromise = Promise.race([
   new Promise((resolve, reject) => setTimeout(() => reject('Failed to initialize connection with Microsoft Teams'), 250))]);
 
 async function openAuthPopup(redirectUri) {
-  var url = new URL(redirectUri);
+  let url = redirectUri instanceof URL ? redirectUri : new URL(redirectUri);
   // Since the OAuth partner might not allow the embedded webview popup
   // https://docs.microsoft.com/en-us/microsoftteams/platform/tabs/how-to/authentication/auth-oauth-provider
   url.searchParams.set('oauthRedirectMethod', '{oauthRedirectMethod}');
   url.searchParams.set('authId', '{authId}');
-  await new Promise((resolve, reject) => microsoftTeams.authentication.authenticate({
+  return await new Promise((resolve, reject) => microsoftTeams.authentication.authenticate({
     url: url.toString(),
     isExternal: true,
     height: 500,
     width: 400,
-    successCallback: resolve, // we don't really need any info from the auth dialog, just that it completed
+    successCallback: resolve, 
     failureCallback: reject
   }));
 }
@@ -28,6 +28,73 @@ async function getAccessToken() {
     });
   });
   return accessToken;
+}
+// quick implementation of https://datatracker.ietf.org/doc/html/rfc4648#section-5
+// by converting standard btoa to url & filesystem safe encoding (replacing entries 62/63 from the encoding table)
+// this is assuredly not the most performant implementation as it iterates over the source string 3x
+// but it is easily verifie
+function base64UrlEncode(buffer)
+{
+  let base64 = btoa(buffer);
+  return base64
+    .replace(/\+/g, '-') // replace '+' with '-' 
+    .replace(/\//g, '_') // replace '/' with '_'
+    .replace(/=*$/, ''); // remove trailing =
+}
+
+async function generatePKCECodes()
+{
+  let codeVerifier = crypto.randomUUID();
+  let textEncoder = new TextEncoder();
+  let codeVerifierBytes = textEncoder.encode(codeVerifier);
+  let codeChallengeBuffer = await crypto.subtle.digest("SHA-256", codeVerifierBytes);
+  let codeChallengeBytes = Array.from(new Uint8Array(codeChallengeBuffer));
+  let codeChallenge = base64UrlEncode(String.fromCharCode(...codeChallengeBytes));
+  
+  return {
+    codeVerifier,
+    codeChallenge
+  }
+}
+
+async function runUserConsentFlow()
+{
+   // we need to create PKCE code challenge / code verification to both ensure the
+  // auth originated from this client and to ensure that the code cannot be claimed by someone else
+  // who side-channels the response
+  let { codeVerifier, codeChallenge } = await generatePKCECodes();
+
+  let accessToken = await getAccessToken();
+  let consentRequestUrl = new URL('/accountLinking/authUrl', window.origin);
+  consentRequestUrl.searchParams.append('codeChallenge', codeChallenge);
+  const consentUrlResponse = await fetch(consentRequestUrl.toString(), {
+    method: 'GET',
+    headers: new Headers({
+      authorization: `Bearer ${accessToken}`
+    })
+  });
+  const {consentUrl} = await consentUrlResponse.json();
+  let url = new URL(consentUrl);
+  url.searchParams.append('state', codeChallenge); // we'll use the code challenge as our state
+  const authResponse = await openAuthPopup(url);
+  var {code, state} = JSON.parse(authResponse);
+  if (state != codeChallenge)
+  {
+    // In practice you would want to alert the end-user to the threat & record this for audit 
+    throw "Code verification failed, potential authentication hijacking detected";
+  }
+
+  // now claim the code
+  accessToken = await getAccessToken();
+  var claimUrl = new URL('/accountLinking/claim', window.origin);
+  claimUrl.searchParams.append('code', code);
+  claimUrl.searchParams.append('codeVerifier', codeVerifier);
+  await fetch(claimUrl.toString(), {
+    method: 'PUT',
+    headers: new Headers({
+      authorization: `Bearer ${accessToken}`
+    })
+  }); 
 }
 
 // The UI elements we use / modify as part of our tab
@@ -66,9 +133,8 @@ async function onLogin()
   if (response.status == 412) {
     var authResponse = await response.json();
     console.log("Need to do the partner auth", { authResponse });
-
-    await openAuthPopup(authResponse.redirectUri);
-
+    
+    await runUserConsentFlow();
     // once the partner auth has completed, the user is logged in, update the UI
     console.log("Finished partner auth, user is now logged in");
     

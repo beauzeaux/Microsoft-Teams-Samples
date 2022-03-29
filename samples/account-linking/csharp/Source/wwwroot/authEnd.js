@@ -10,8 +10,11 @@ async function main() {
     try {
         await teamsPromise;
         console.log("auth end started");
-        // This is the auth popup for the partner auth. We should just close
-        microsoftTeams.authentication.notifySuccess();
+        const currentUri = new URL(window.location.href);
+        var state = currentUri.searchParams.get('state');
+        var code = currentUri.searchParams.get('code');
+        // We need to send back the 'state' and the 'code' so that the caller can claim the token(s)
+        microsoftTeams.authentication.notifySuccess(JSON.stringify({state, code}));
     } catch (ex) {
         console.error('Error happened while trying to end auth', ex);
         console.log("Attempting to close window");

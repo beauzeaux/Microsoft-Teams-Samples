@@ -63,7 +63,6 @@ public sealed class AccountLinkingPrompt : Dialog
                         new CardAction
                         {
                             Title = "Sign in",
-                            Value = needsConsentResult.RedirectUri.ToString(),
                             Type = ActionTypes.Signin,
                         },
                     },

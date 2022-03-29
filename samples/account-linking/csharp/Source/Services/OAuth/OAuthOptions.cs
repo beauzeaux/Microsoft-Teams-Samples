@@ -56,4 +56,7 @@ public sealed class OAuthOptions
     /// </remarks>
     [Required(AllowEmptyStrings = false)]
     public string AuthEndUri { get; set; } = string.Empty; 
+
+    [Required(AllowEmptyStrings = false)]
+    public string AuthEndRedirect {get; set; } = string.Empty;
 }

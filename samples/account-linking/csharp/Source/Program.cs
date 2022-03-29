@@ -123,7 +123,7 @@ else
     });
 }
 
-services.AddTransient<OAuthStateService>();
+services.AddTransient<OAuthStateService<OAuthStateObject>>();
 services.AddTransient<OAuthTokenProvider>();
 
 // Add Microsoft.Identity.Web for the Github Controller so we can validate the Azure AD access token from the 
