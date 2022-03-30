@@ -8,7 +8,6 @@ using Microsoft.Teams.Samples.AccountLinking.GitHub;
 using Microsoft.AspNetCore.DataProtection;
 using System.Web;
 using System.Text.Json;
-using System.Text.Json.Serialization;
 
 namespace Microsoft.Teams.Samples.AccountLinking.Bots;
 
@@ -86,10 +85,10 @@ public sealed class SampleActivityHandler<TDialog> : TeamsActivityHandler where 
                 _logger.LogWarning("Invalid state object provided: {state}", query.State);
                 throw new Exception("Invalid state format");
             }
-            _logger.LogInformation("Params:\nState: {state}\nCode: {code}", authResponseObject.State, authResponseObject.Code);
+            _logger.LogInformation("Params:\nState: {state}\nCode: {code}", authResponseObject.State, authResponseObject.AccountLinkingState);
             var codeVerifier = _dataProtector.Unprotect(authResponseObject.State);
             await _oAuthTokenProvider.ClaimTokenAsync(
-                state: authResponseObject.Code, // these are inverted because
+                accountLinkingToken: authResponseObject.AccountLinkingState, // these are inverted because
                 codeVerifier: codeVerifier,
                 tenantId: tenantId,
                 userId: userId);
@@ -102,10 +101,7 @@ public sealed class SampleActivityHandler<TDialog> : TeamsActivityHandler where 
         {
             _logger.LogInformation("Messaging Extension query with no GitHub token, sending login prompt");
             var (codeChallenge, codeVerifier) = Pkce.GeneratePkceCodes();
-            var consentUri = await _oAuthTokenProvider.GetConsentUriAsync(
-                tenantId: tenantId,
-                userId: userId,
-                codeChallenge: codeChallenge);
+            var consentUri = await _oAuthTokenProvider.GetConsentUriAsync(codeChallenge: codeChallenge);
             var queryParams = HttpUtility.ParseQueryString(consentUri.Query);
             queryParams.Add("state", _dataProtector.Protect(codeVerifier));
             var loginConsentUri = new UriBuilder(consentUri)

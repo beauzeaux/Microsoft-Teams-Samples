@@ -8,11 +8,8 @@ using Microsoft.Identity.Web;
 
 namespace Microsoft.Teams.Samples.AccountLinking.Controllers;
 
-
-[Authorize]
 [ApiController]
 [Route("[controller]")]
-[RequiredScope(RequiredScopesConfigurationKey = "AzureAd:Scopes")]
 public sealed class AccountLinkingController : ControllerBase
 {
     private readonly OAuthTokenProvider _tokenProvider;
@@ -31,20 +28,18 @@ public sealed class AccountLinkingController : ControllerBase
         _tokenProvider = tokenProvider;
     }
 
-    [Authorize]
-    [RequiredScope(RequiredScopesConfigurationKey = "AzureAd:Scopes")]
+    [AllowAnonymous]
     [HttpGet("authUrl")]
-    public async Task<IActionResult> CreateAuthorizationUrl([FromQuery] string? codeChallenge)
+    public async Task<IActionResult> CreateAuthorizationUrl(
+        [FromQuery(Name="code_challenge")] string? codeChallenge)
     {
-        var userId = User.FindFirstValue(ClaimConstants.ObjectId);
-        var tenantId = User.FindFirstValue(ClaimConstants.TenantId);
         if (codeChallenge == default)
         {
             return new BadRequestObjectResult(new {
                 Error = "No code challenge in query parameters"
             });
         }
-        var consentUrl = await _tokenProvider.GetConsentUriAsync(tenantId: tenantId, userId: userId, codeChallenge: codeChallenge);
+        var consentUrl = await _tokenProvider.GetConsentUriAsync(codeChallenge: codeChallenge);
         return new OkObjectResult(new {
             consentUrl
         });
@@ -54,17 +49,16 @@ public sealed class AccountLinkingController : ControllerBase
     [RequiredScope(RequiredScopesConfigurationKey = "AzureAd:Scopes")]
     [HttpPut("claim")]
     public async Task<IActionResult> ClaimTokenAsync(
-        [FromQuery] string? code,
-        [FromQuery] string? codeVerifier)
+        [FromBody] TokenClaimRequestBody tokenClaimRequest)
     {
-        if (code == default)
+        if (tokenClaimRequest.Code == default)
         {
             return new BadRequestObjectResult(new {
                 Error = "No code in query parameters"
             });
         }
 
-        if (codeVerifier == default)
+        if (tokenClaimRequest.CodeVerifier == default)
         {
             return new BadRequestObjectResult(new {
                 Error = "No code verifier in query parameters"
@@ -75,12 +69,11 @@ public sealed class AccountLinkingController : ControllerBase
         var tenantId = User.FindFirstValue(ClaimConstants.TenantId);
 
         await _tokenProvider.ClaimTokenAsync(
-            state: code, // our 'state' was given back to the caller as the 'code' for claiming
+            accountLinkingToken: tokenClaimRequest.Code, // our 'state' was given back to the caller as the 'code' for claiming
             tenantId: tenantId,
             userId: userId,
-            codeVerifier: codeVerifier);
+            codeVerifier: tokenClaimRequest.CodeVerifier);
 
         return new OkResult();
     }
 }
-

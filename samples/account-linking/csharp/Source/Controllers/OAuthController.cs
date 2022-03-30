@@ -5,6 +5,7 @@ using System.Collections.Specialized;
 using System.Web;
 
 using Microsoft.Teams.Samples.AccountLinking.OAuth;
+using Microsoft.Teams.Samples.AccountLinking.AccountLinkingState;
 
 namespace Microsoft.Teams.Samples.AccountLinking.Controllers;
 
@@ -13,7 +14,7 @@ namespace Microsoft.Teams.Samples.AccountLinking.Controllers;
 [Route("[controller]")]
 public sealed class OAuthController : ControllerBase
 {
-    private readonly OAuthStateService<OAuthStateObject> _stateService;
+    private readonly AccountLinkingStateService<OAuthStateObject> _stateService;
 
     private readonly ILogger<OAuthController> _logger;
 
@@ -22,7 +23,7 @@ public sealed class OAuthController : ControllerBase
     public OAuthController(
         ILogger<OAuthController> logger,
         IOptions<OAuthOptions> options,
-        OAuthStateService<OAuthStateObject> stateService)
+        AccountLinkingStateService<OAuthStateObject> stateService)
     {
         _logger = logger;
         _options = options.Value;
@@ -30,7 +31,9 @@ public sealed class OAuthController : ControllerBase
     }
 
     [HttpGet("start")]
-    public async Task<IActionResult> StartAuthAsync([FromQuery] string? state, [FromQuery] string? tokenState)
+    public async Task<IActionResult> StartAuthAsync(
+        [FromQuery] string? state,
+        [FromQuery(Name="acct_state")] string? accountLinkingState)
     { 
         if (state == default)
         {
@@ -39,7 +42,7 @@ public sealed class OAuthController : ControllerBase
             });
         }
 
-        if (tokenState == default)
+        if (accountLinkingState == default)
         {
             return new BadRequestObjectResult(new {
                 Error = "No state in query parameters"
@@ -47,14 +50,15 @@ public sealed class OAuthController : ControllerBase
         }
 
         // Encode the 'state' into the 'tokenState'
-        var mutableState = (await _stateService.GetMutableStateAsync(tokenState)) ?? new OAuthStateObject();
+        var mutableState = (await _stateService.GetMutableStateAsync(accountLinkingState)) ?? new OAuthStateObject();
         mutableState.ClientState = state;
-        var nextState = await _stateService.SetMutableStateAsync(tokenState, mutableState);
+        var nextState = await _stateService.SetMutableStateAsync(accountLinkingState, mutableState);
 
         // Formulate the query string (strange hack so that the .ToString() gives us a proper query string)
         NameValueCollection oauthQueryParameters = HttpUtility.ParseQueryString(string.Empty);
         oauthQueryParameters.Add("client_id", _options.ClientId);
-        oauthQueryParameters.Add("state", nextState);
+        // we use our acct linking state as the 'state' parameter in the external OAuth.
+        oauthQueryParameters.Add("state", nextState); 
         oauthQueryParameters.Add("redirect_uri", _options.AuthEndUri);
         var redirectUriBuilder = new UriBuilder(_options.AuthorizeUrl)
         {
@@ -66,9 +70,11 @@ public sealed class OAuthController : ControllerBase
     }
 
     [HttpGet("end")]
-    public async Task<IActionResult> EndAuthAsync([FromQuery] string? state, [FromQuery] string? code)
+    public async Task<IActionResult> EndAuthAsync(
+        [FromQuery(Name="state")] string? accountLinkingState,
+        [FromQuery] string? code)
     { 
-        if (state == default)
+        if (accountLinkingState == default)
         {
              return new BadRequestObjectResult(new {
                 Error = "No state in query parameters"
@@ -84,10 +90,10 @@ public sealed class OAuthController : ControllerBase
 
         // encode the oauth 'code' into the state so we can re-brand the state as the 
         // 'code' returned to the client.
-        var mutableState = (await _stateService.GetMutableStateAsync(state)) ?? new OAuthStateObject();
+        var mutableState = (await _stateService.GetMutableStateAsync(accountLinkingState)) ?? new OAuthStateObject();
         mutableState.OAuthCode = code;
 
-        var nextState = await _stateService.SetMutableStateAsync(state, mutableState);
+        var nextState = await _stateService.SetMutableStateAsync(accountLinkingState, mutableState);
 
         // We send back our internal 'state' as the 'code' that the client will use to claim the auth token
         // and send back the client's state as the 'state' parameter to keep harmony with existing protocols.

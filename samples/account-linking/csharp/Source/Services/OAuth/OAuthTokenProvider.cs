@@ -2,6 +2,7 @@ using System.Collections.Specialized;
 using System.Text.Json;
 using System.Web;
 using Microsoft.Extensions.Options;
+using Microsoft.Teams.Samples.AccountLinking.AccountLinkingState;
 using Microsoft.Teams.Samples.AccountLinking.UserTokenStorage;
 
 namespace Microsoft.Teams.Samples.AccountLinking.OAuth;
@@ -13,7 +14,7 @@ public sealed class OAuthTokenProvider
 {
     private readonly ILogger<OAuthTokenProvider> _logger;
 
-    private readonly OAuthStateService<OAuthStateObject> _oAuthStateService;
+    private readonly AccountLinkingStateService<OAuthStateObject> _oAuthStateService;
 
     private readonly OAuthServiceClient _oAuthServiceClient;
 
@@ -24,7 +25,7 @@ public sealed class OAuthTokenProvider
     public OAuthTokenProvider(
         ILogger<OAuthTokenProvider> logger,
         IOptions<OAuthOptions> options,
-        OAuthStateService<OAuthStateObject> oAuthStateService,
+        AccountLinkingStateService<OAuthStateObject> oAuthStateService,
         OAuthServiceClient oAuthServiceClient,
         IUserTokenStore userTokenStore)
     {
@@ -35,14 +36,13 @@ public sealed class OAuthTokenProvider
         _userTokenStore = userTokenStore;
     }
 
-    public async Task<Uri> GetConsentUriAsync(string tenantId, string userId, string codeChallenge)
+    public async Task<Uri> GetConsentUriAsync(string codeChallenge)
     {
-        var state = await _oAuthStateService.CreateStateAsync(
-            subject: Subject(tenantId: tenantId, userId: userId),
+        var accountLinkingState = await _oAuthStateService.CreateAccountLinkingTokenAsync(
             codeChallenge: codeChallenge,
             initialState: new OAuthStateObject());
         NameValueCollection queryParameters = HttpUtility.ParseQueryString(string.Empty);
-        queryParameters.Add("tokenState", state);
+        queryParameters.Add("acct_state", accountLinkingState);
         var redirectUri = new UriBuilder(_options.AuthStartUri)
         {
             Query = queryParameters.ToString(),
@@ -113,17 +113,16 @@ public sealed class OAuthTokenProvider
         };
     }
 
-    public async Task ClaimTokenAsync(string state, string tenantId, string userId, string codeVerifier)
+    public async Task ClaimTokenAsync(string accountLinkingToken, string tenantId, string userId, string codeVerifier)
     {
-        var mutableState = await _oAuthStateService.GetMutableStateAsync(state);
+        var mutableState = await _oAuthStateService.GetMutableStateAsync(accountLinkingToken);
         if (string.IsNullOrEmpty(mutableState?.OAuthCode))
         {
             throw new Exception("Missing or invalid oauth code, cannot claim");
         }
 
         await _oAuthStateService.VerifyAsync(
-            state: state,
-            subject: Subject(tenantId: tenantId, userId: userId),
+            accountLinkingToken: accountLinkingToken,
             codeVerifier: codeVerifier);
 
         var oAuthResult = await _oAuthServiceClient.ClaimCodeAsync(mutableState.OAuthCode);
@@ -143,11 +142,6 @@ public sealed class OAuthTokenProvider
     public async Task LogoutAsync(string tenantId, string userId)
     {
         await _userTokenStore.DeleteTokenAsync(tenantId: tenantId, userId: userId);
-    }
-
-    private static string Subject(string tenantId, string userId)
-    {
-        return $"{tenantId}_{userId}";
     }
 }
 

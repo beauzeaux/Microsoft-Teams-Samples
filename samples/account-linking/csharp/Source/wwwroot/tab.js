@@ -32,7 +32,7 @@ async function getAccessToken() {
 // quick implementation of https://datatracker.ietf.org/doc/html/rfc4648#section-5
 // by converting standard btoa to url & filesystem safe encoding (replacing entries 62/63 from the encoding table)
 // this is assuredly not the most performant implementation as it iterates over the source string 3x
-// but it is easily verifie
+// but it is easily verifiable
 function base64UrlEncode(buffer)
 {
   let base64 = btoa(buffer);
@@ -59,20 +59,15 @@ async function generatePKCECodes()
 
 async function runUserConsentFlow()
 {
-   // we need to create PKCE code challenge / code verification to both ensure the
+  // we need to create PKCE code challenge / code verification to both ensure the
   // auth originated from this client and to ensure that the code cannot be claimed by someone else
-  // who side-channels the response
+  // who eavesdrops on the response url
   let { codeVerifier, codeChallenge } = await generatePKCECodes();
 
   let accessToken = await getAccessToken();
   let consentRequestUrl = new URL('/accountLinking/authUrl', window.origin);
-  consentRequestUrl.searchParams.append('codeChallenge', codeChallenge);
-  const consentUrlResponse = await fetch(consentRequestUrl.toString(), {
-    method: 'GET',
-    headers: new Headers({
-      authorization: `Bearer ${accessToken}`
-    })
-  });
+  consentRequestUrl.searchParams.append('code_challenge', codeChallenge);
+  const consentUrlResponse = await fetch(consentRequestUrl.toString());
   const {consentUrl} = await consentUrlResponse.json();
   let url = new URL(consentUrl);
   url.searchParams.append('state', codeChallenge); // we'll use the code challenge as our state
@@ -88,12 +83,17 @@ async function runUserConsentFlow()
   accessToken = await getAccessToken();
   var claimUrl = new URL('/accountLinking/claim', window.origin);
   claimUrl.searchParams.append('code', code);
-  claimUrl.searchParams.append('codeVerifier', codeVerifier);
-  await fetch(claimUrl.toString(), {
+  claimUrl.searchParams.append('code_verifier', codeVerifier);
+  await fetch('/accountLinking/claim', {
     method: 'PUT',
     headers: new Headers({
-      authorization: `Bearer ${accessToken}`
-    })
+      authorization: `Bearer ${accessToken}`,
+      'Content-Type': 'application/json'
+    }),
+    body: JSON.stringify({
+      code_verifier: codeVerifier,
+      code: code
+    }),
   }); 
 }
 

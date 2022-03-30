@@ -1,7 +1,7 @@
-namespace Microsoft.Teams.Samples.AccountLinking.OAuth;
+namespace Microsoft.Teams.Samples.AccountLinking.AccountLinkingState;
 
 /// <summary>
-/// The mutable intermediate data used during the auth flows.
+/// The mutable data we need while doing an OAuth2.0 consent flow. 
 /// </summary>
 public sealed class OAuthStateObject
 {
@@ -11,6 +11,7 @@ public sealed class OAuthStateObject
     /// </summary>
     /// <value></value>
     public string? ClientState { get; set; }
+
     /// <summary>
     /// The OAuth2.0 code returned from the service which we can exchange once for an access token.
     /// </summary>

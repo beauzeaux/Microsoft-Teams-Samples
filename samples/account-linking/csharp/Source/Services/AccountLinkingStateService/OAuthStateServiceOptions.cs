@@ -1,11 +1,11 @@
 using System.ComponentModel.DataAnnotations;
 
-namespace Microsoft.Teams.Samples.AccountLinking.OAuth;
+namespace Microsoft.Teams.Samples.AccountLinking.AccountLinkingState;
 
 /// <summary>
-/// The configuration options for the <see cref="OAuthStateService" />
+/// The configuration options for the <see cref="AccountLinkingStateService" />
 /// </summary>
-public sealed class OAuthStateServiceOptions
+public sealed class AccountLinkingStateServiceOptions
 {
 
     /// <summary>
@@ -21,7 +21,7 @@ public sealed class OAuthStateServiceOptions
 
     /// <summary>
     /// Gets or sets the name of the <see cref="IDataProtector" /> used to encrypt the state values.
-    /// By default this will be derived from the namespace / assembly / name of the <see cref="OAuthStateService" />
+    /// By default this will be derived from the namespace / assembly / name of the <see cref="AccountLinkingStateService" />
     /// </summary>
     /// <returns>The name of the data protector used to encrypt the state values.</returns>
     /// <seealso href="https://docs.microsoft.com/en-us/aspnet/core/security/data-protection/introduction" />

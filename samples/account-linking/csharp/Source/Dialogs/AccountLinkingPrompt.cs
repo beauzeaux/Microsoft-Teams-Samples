@@ -1,10 +1,10 @@
+using System.Text.Json;
 using System.Web;
 using Microsoft.Bot.Builder;
 using Microsoft.Bot.Builder.Dialogs;
 using Microsoft.Bot.Schema;
 using Microsoft.Extensions.Options;
 using Microsoft.Teams.Samples.AccountLinking.OAuth;
-using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 
 namespace Microsoft.Teams.Samples.AccountLinking.Dialogs;
@@ -57,10 +57,7 @@ public sealed class AccountLinkingPrompt : Dialog
         if (tokenResult is NeedsConsentResult)
         {
             var (codeChallenge, codeVerifier) = Pkce.GeneratePkceCodes();
-            var consentUri = await _oauthTokenProvider.GetConsentUriAsync(
-                tenantId: tenantId,
-                userId: userId,
-                codeChallenge: codeChallenge);
+            var consentUri = await _oauthTokenProvider.GetConsentUriAsync(codeChallenge: codeChallenge);
             var queryParams = HttpUtility.ParseQueryString(consentUri.Query);
             queryParams.Add("state", codeChallenge); // For bot we'll just use the codeChallenge as the 'state'
             var loginConsentUri = new UriBuilder(consentUri)
@@ -129,19 +126,18 @@ public sealed class AccountLinkingPrompt : Dialog
             _logger.LogInformation("Detected token response, attempting to complete auth flow");
             var value = dc.Context.Activity.Value as JObject;
             var stateString = value?.GetValue("state")?.ToString() ?? string.Empty;
-            var accessTokenResult = JsonConvert.DeserializeObject<AuthResponse>(stateString);
+            var authResponse = JsonSerializer.Deserialize<AuthResponse>(stateString);
             var codeVerifier = state[CodeVerifierKey] as string ?? string.Empty;
             var expectedState = Pkce.Base64UrlEncodeSha256(codeVerifier);
-            if (!string.Equals(accessTokenResult.State, expectedState))
+            if (!string.Equals(authResponse?.State, expectedState))
             {
                 // The state returned doesn't match the expected. potentially a forgery attempt.
-                _logger.LogWarning("Potential forgery attempt: {expectedState} | {actualState} | {verifier}", expectedState, accessTokenResult.State, codeVerifier);
+                _logger.LogWarning("Potential forgery attempt: {expectedState} | {actualState} | {verifier}", expectedState, authResponse?.State, codeVerifier);
                 return await dc.EndDialogAsync(cancellationToken: cancellationToken).ConfigureAwait(false);
             }
 
-            // Now claim the oauth code
             await _oauthTokenProvider.ClaimTokenAsync(
-                state: accessTokenResult.Code,
+                accountLinkingToken: authResponse?.AccountLinkingState ?? string.Empty,
                 tenantId: tenantId,
                 userId: userId,
                 codeVerifier: codeVerifier

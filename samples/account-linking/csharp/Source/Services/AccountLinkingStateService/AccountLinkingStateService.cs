@@ -4,7 +4,7 @@ using Microsoft.Extensions.Options;
 
 using Microsoft.Teams.Samples.AccountLinking.ReplayValidation;
 
-namespace Microsoft.Teams.Samples.AccountLinking.OAuth;
+namespace Microsoft.Teams.Samples.AccountLinking.AccountLinkingState;
 
 /// <summary>
 /// The OAuthStateService is responsible for encoding the tenant and user ids in a verifiable object with a limited lifespan. 
@@ -15,9 +15,9 @@ namespace Microsoft.Teams.Samples.AccountLinking.OAuth;
 /// This uses the ASP.NET Core Data Protection library to handle the cryptographic verification of the encoded 'state' object.
 /// To learn more see the documentation at: https://docs.microsoft.com/en-us/aspnet/core/security/data-protection/introduction
 /// </remarks> 
-public sealed class OAuthStateService<TState> where TState : class?
+public sealed class AccountLinkingStateService<TState> where TState : class?
 {
-    private readonly ILogger<OAuthStateService<TState>> _logger;
+    private readonly ILogger<AccountLinkingStateService<TState>> _logger;
 
     private readonly IReplayValidator _replayValidator;
 
@@ -25,27 +25,26 @@ public sealed class OAuthStateService<TState> where TState : class?
 
     private readonly TimeSpan _lifeSpan;
 
-    public OAuthStateService(
-        ILogger<OAuthStateService<TState>> logger,
+    public AccountLinkingStateService(
+        ILogger<AccountLinkingStateService<TState>> logger,
         IReplayValidator replayValidator, 
         IDataProtectionProvider dataProtectionProvider, 
-        IOptions<OAuthStateServiceOptions> options)
+        IOptions<AccountLinkingStateServiceOptions> options)
     {
         _logger = logger;
         _replayValidator = replayValidator;
         var protectorName = string.IsNullOrEmpty(options.Value.ProtectorName)
-            ? (typeof(OAuthStateService<TState>).Assembly.FullName ?? nameof(OAuthStateService<TState>))
+            ? (typeof(AccountLinkingStateService<TState>).Assembly.FullName ?? nameof(AccountLinkingStateService<TState>))
             : options.Value.ProtectorName;
         _dataProtector = dataProtectionProvider.CreateProtector(protectorName).ToTimeLimitedDataProtector();
         _lifeSpan = options.Value.ExpirationTime;
     }
 
-    public Task<string> CreateStateAsync(string subject, string codeChallenge, TState? initialState)
+    public Task<string> CreateAccountLinkingTokenAsync(string codeChallenge, TState? initialState)
     {
-        var state = new OAuthStateWrapper<TState>()
+        var state = new AccountLinkingToken<TState>()
         {
             Id = Guid.NewGuid().ToString(),
-            Subject = subject,
             CodeChallenge = codeChallenge,
             State = initialState
         };
@@ -54,17 +53,17 @@ public sealed class OAuthStateService<TState> where TState : class?
         return Task.FromResult(protectedString);
     }
 
-    public Task<TState?> GetMutableStateAsync(string state)
+    public Task<TState?> GetMutableStateAsync(string accountLinkingToken)
     {
-        string unprotectedStateString = _dataProtector.Unprotect(state, out DateTimeOffset validUntil);
-        var stateObject = JsonSerializer.Deserialize<OAuthStateWrapper<TState>>(unprotectedStateString);
+        string unprotectedStateString = _dataProtector.Unprotect(accountLinkingToken, out DateTimeOffset validUntil);
+        var stateObject = JsonSerializer.Deserialize<AccountLinkingToken<TState>>(unprotectedStateString);
         return Task.FromResult(stateObject?.State);
     }
 
-    public Task<string> SetMutableStateAsync(string state, TState? mutableState)
+    public Task<string> SetMutableStateAsync(string accountLinkingToken, TState? mutableState)
     {
-        string unprotectedStateString = _dataProtector.Unprotect(state, out DateTimeOffset validUntil);
-        var stateObject = JsonSerializer.Deserialize<OAuthStateWrapper<TState>>(unprotectedStateString);
+        string unprotectedStateString = _dataProtector.Unprotect(accountLinkingToken, out DateTimeOffset validUntil);
+        var stateObject = JsonSerializer.Deserialize<AccountLinkingToken<TState>>(unprotectedStateString);
         if (stateObject == default)
         {
             throw new Exception("Invalid state object");
@@ -75,21 +74,15 @@ public sealed class OAuthStateService<TState> where TState : class?
         return Task.FromResult(nextState);
     }
 
-    public async Task<TState?> VerifyAsync(string state, string subject, string codeVerifier)
+    public async Task<TState?> VerifyAsync(string accountLinkingToken, string codeVerifier)
     {
-        string unprotectedStateString = _dataProtector.Unprotect(state, out DateTimeOffset validUntil);
+        string unprotectedStateString = _dataProtector.Unprotect(accountLinkingToken, out DateTimeOffset validUntil);
 
-        var stateObject = JsonSerializer.Deserialize<OAuthStateWrapper<TState>>(unprotectedStateString);
+        var stateObject = JsonSerializer.Deserialize<AccountLinkingToken<TState>>(unprotectedStateString);
         if (stateObject == default)
         {
             _logger.LogWarning("Failed to deserialize the state object");
             throw new Exception("Verification failed, state object invalid");
-        }
-
-        if (!string.Equals(stateObject.Subject, subject, StringComparison.OrdinalIgnoreCase))
-        {
-            _logger.LogWarning("Verification failed, subject mismatch: {expected} | {actual}", stateObject.Subject, subject);
-            throw new Exception("Verification failed, subject mismatch");
         }
 
         // transform the code verifier and check it against the codeChallenge

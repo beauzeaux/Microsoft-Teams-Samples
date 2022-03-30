@@ -17,6 +17,7 @@ using Microsoft.Teams.Samples.AccountLinking.UserTokenStorage;
 
 using Microsoft.Teams.Samples.AccountLinking.Bots;
 using Microsoft.Teams.Samples.AccountLinking.Dialogs;
+using Microsoft.Teams.Samples.AccountLinking.AccountLinkingState;
 
 var builder = WebApplication.CreateBuilder(args);
 var useAzure = builder.Configuration.GetValue<bool>("UseAzure");
@@ -123,7 +124,7 @@ else
     });
 }
 
-services.AddTransient<OAuthStateService<OAuthStateObject>>();
+services.AddTransient<AccountLinkingStateService<OAuthStateObject>>();
 services.AddTransient<OAuthTokenProvider>();
 
 // Add Microsoft.Identity.Web for the Github Controller so we can validate the Azure AD access token from the 
