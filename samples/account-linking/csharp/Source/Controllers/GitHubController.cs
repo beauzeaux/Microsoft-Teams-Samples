@@ -45,9 +45,15 @@ public sealed class GitHubController : ControllerBase
 
         var tokenResult = await _tokenProvider.GetAccessTokenAsync(tenantId: tenantId, userId: userId);
 
-        if (tokenResult is NeedsConsentResult)
+        if (tokenResult is NeedsConsentResult needsConsentResult)
         {
-            return new StatusCodeResult((int)HttpStatusCode.PreconditionFailed);
+            return new ObjectResult(new 
+            {
+                authorize_url = needsConsentResult.AuthorizeUri,
+            })
+            {
+                StatusCode = (int)HttpStatusCode.PreconditionFailed,
+            };
         }
         else if (tokenResult is AccessTokenResult accessTokenResult)
         {

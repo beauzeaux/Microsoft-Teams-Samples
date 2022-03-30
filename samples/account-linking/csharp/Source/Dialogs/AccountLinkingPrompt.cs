@@ -54,13 +54,13 @@ public sealed class AccountLinkingPrompt : Dialog
 
         // Attempt to get the users token
         var tokenResult = await _oauthTokenProvider.GetAccessTokenAsync(tenantId: tenantId, userId: userId);
-        if (tokenResult is NeedsConsentResult)
+        if (tokenResult is NeedsConsentResult needsConsentResult)
         {
             var (codeChallenge, codeVerifier) = Pkce.GeneratePkceCodes();
-            var consentUri = await _oauthTokenProvider.GetConsentUriAsync(codeChallenge: codeChallenge);
-            var queryParams = HttpUtility.ParseQueryString(consentUri.Query);
+            var queryParams = HttpUtility.ParseQueryString(needsConsentResult.AuthorizeUri.Query);
             queryParams.Add("state", codeChallenge); // For bot we'll just use the codeChallenge as the 'state'
-            var loginConsentUri = new UriBuilder(consentUri)
+            queryParams.Add("code_challenge", codeChallenge);
+            var loginConsentUri = new UriBuilder(needsConsentResult.AuthorizeUri)
             {
                 Query = queryParams.ToString()
             }; 

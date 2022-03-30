@@ -5,7 +5,7 @@ using System.Collections.Specialized;
 using System.Web;
 
 using Microsoft.Teams.Samples.AccountLinking.OAuth;
-using Microsoft.Teams.Samples.AccountLinking.AccountLinkingState;
+using Microsoft.Teams.Samples.AccountLinking.State;
 
 namespace Microsoft.Teams.Samples.AccountLinking.Controllers;
 
@@ -14,7 +14,7 @@ namespace Microsoft.Teams.Samples.AccountLinking.Controllers;
 [Route("[controller]")]
 public sealed class OAuthController : ControllerBase
 {
-    private readonly AccountLinkingStateService<OAuthStateObject> _stateService;
+    private readonly AccountLinkingStateService _stateService;
 
     private readonly ILogger<OAuthController> _logger;
 
@@ -23,7 +23,7 @@ public sealed class OAuthController : ControllerBase
     public OAuthController(
         ILogger<OAuthController> logger,
         IOptions<OAuthOptions> options,
-        AccountLinkingStateService<OAuthStateObject> stateService)
+        AccountLinkingStateService stateService)
     {
         _logger = logger;
         _options = options.Value;
@@ -33,7 +33,7 @@ public sealed class OAuthController : ControllerBase
     [HttpGet("start")]
     public async Task<IActionResult> StartAuthAsync(
         [FromQuery] string? state,
-        [FromQuery(Name="acct_state")] string? accountLinkingState)
+        [FromQuery(Name="code_challenge")] string? codeChallenge)
     { 
         if (state == default)
         {
@@ -42,23 +42,23 @@ public sealed class OAuthController : ControllerBase
             });
         }
 
-        if (accountLinkingState == default)
+        if (codeChallenge == default)
         {
             return new BadRequestObjectResult(new {
-                Error = "No state in query parameters"
+                Error = "No codeChallenge in query parameters"
             });
         }
 
-        // Encode the 'state' into the 'tokenState'
-        var mutableState = (await _stateService.GetMutableStateAsync(accountLinkingState)) ?? new OAuthStateObject();
-        mutableState.ClientState = state;
-        var nextState = await _stateService.SetMutableStateAsync(accountLinkingState, mutableState);
+        var accountLinkingState = await _stateService.SetAsync(new AccountLinkingState(codeChallenge: codeChallenge)
+        {
+            ClientState = state
+        });
 
         // Formulate the query string (strange hack so that the .ToString() gives us a proper query string)
         NameValueCollection oauthQueryParameters = HttpUtility.ParseQueryString(string.Empty);
         oauthQueryParameters.Add("client_id", _options.ClientId);
         // we use our acct linking state as the 'state' parameter in the external OAuth.
-        oauthQueryParameters.Add("state", nextState); 
+        oauthQueryParameters.Add("state", accountLinkingState); 
         oauthQueryParameters.Add("redirect_uri", _options.AuthEndUri);
         var redirectUriBuilder = new UriBuilder(_options.AuthorizeUrl)
         {
@@ -90,16 +90,17 @@ public sealed class OAuthController : ControllerBase
 
         // encode the oauth 'code' into the state so we can re-brand the state as the 
         // 'code' returned to the client.
-        var mutableState = (await _stateService.GetMutableStateAsync(accountLinkingState)) ?? new OAuthStateObject();
-        mutableState.OAuthCode = code;
-
-        var nextState = await _stateService.SetMutableStateAsync(accountLinkingState, mutableState);
+        var (acctState, exp) = await _stateService.GetAsync(accountLinkingState);
+        acctState.OAuthCode = code;
+        var claimCode = await _stateService.SetAsync(acctState, exp);
+        
+        var clientState = acctState.ClientState;
 
         // We send back our internal 'state' as the 'code' that the client will use to claim the auth token
         // and send back the client's state as the 'state' parameter to keep harmony with existing protocols.
         NameValueCollection queryParams = HttpUtility.ParseQueryString(string.Empty);
-        queryParams.Add("state", mutableState.ClientState);
-        queryParams.Add("code", nextState);
+        queryParams.Add("state", clientState);
+        queryParams.Add("code", claimCode);
         //TODO: the auth end url should be encoded into the 'state'
         var redirectUriBuilder = new UriBuilder(_options.AuthEndRedirect) 
         {

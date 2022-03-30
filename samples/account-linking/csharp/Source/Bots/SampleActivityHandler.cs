@@ -97,14 +97,14 @@ public sealed class SampleActivityHandler<TDialog> : TeamsActivityHandler where 
         // Attempt to retrieve the github token
         var tokenResult = await _oAuthTokenProvider.GetAccessTokenAsync(tenantId: tenantId, userId: userId);
 
-        if (tokenResult is NeedsConsentResult)
+        if (tokenResult is NeedsConsentResult needsConsentResult)
         {
             _logger.LogInformation("Messaging Extension query with no GitHub token, sending login prompt");
             var (codeChallenge, codeVerifier) = Pkce.GeneratePkceCodes();
-            var consentUri = await _oAuthTokenProvider.GetConsentUriAsync(codeChallenge: codeChallenge);
-            var queryParams = HttpUtility.ParseQueryString(consentUri.Query);
+            var queryParams = HttpUtility.ParseQueryString(needsConsentResult.AuthorizeUri.Query);
             queryParams.Add("state", _dataProtector.Protect(codeVerifier));
-            var loginConsentUri = new UriBuilder(consentUri)
+            queryParams.Add("code_challenge", codeChallenge);
+            var loginConsentUri = new UriBuilder(needsConsentResult.AuthorizeUri)
             {
                 Query = queryParams.ToString()
             };

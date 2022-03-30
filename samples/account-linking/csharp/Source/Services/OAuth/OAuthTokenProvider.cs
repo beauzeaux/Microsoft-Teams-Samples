@@ -1,8 +1,7 @@
-using System.Collections.Specialized;
 using System.Text.Json;
-using System.Web;
 using Microsoft.Extensions.Options;
-using Microsoft.Teams.Samples.AccountLinking.AccountLinkingState;
+using Microsoft.Teams.Samples.AccountLinking.ReplayValidation;
+using Microsoft.Teams.Samples.AccountLinking.State;
 using Microsoft.Teams.Samples.AccountLinking.UserTokenStorage;
 
 namespace Microsoft.Teams.Samples.AccountLinking.OAuth;
@@ -14,42 +13,30 @@ public sealed class OAuthTokenProvider
 {
     private readonly ILogger<OAuthTokenProvider> _logger;
 
-    private readonly AccountLinkingStateService<OAuthStateObject> _oAuthStateService;
+    private readonly AccountLinkingStateService _oAuthStateService;
 
     private readonly OAuthServiceClient _oAuthServiceClient;
 
     private readonly IUserTokenStore _userTokenStore;
 
     private readonly OAuthOptions _options;
+    
+    private readonly IReplayValidator _replayValidator;
 
     public OAuthTokenProvider(
         ILogger<OAuthTokenProvider> logger,
         IOptions<OAuthOptions> options,
-        AccountLinkingStateService<OAuthStateObject> oAuthStateService,
+        AccountLinkingStateService oAuthStateService,
         OAuthServiceClient oAuthServiceClient,
-        IUserTokenStore userTokenStore)
+        IUserTokenStore userTokenStore, 
+        IReplayValidator replayValidator)
     {
         _logger = logger;
         _options = options.Value;
         _oAuthStateService = oAuthStateService;
         _oAuthServiceClient = oAuthServiceClient;
         _userTokenStore = userTokenStore;
-    }
-
-    public async Task<Uri> GetConsentUriAsync(string codeChallenge)
-    {
-        var accountLinkingState = await _oAuthStateService.CreateAccountLinkingTokenAsync(
-            codeChallenge: codeChallenge,
-            initialState: new OAuthStateObject());
-        NameValueCollection queryParameters = HttpUtility.ParseQueryString(string.Empty);
-        queryParameters.Add("acct_state", accountLinkingState);
-        var redirectUri = new UriBuilder(_options.AuthStartUri)
-        {
-            Query = queryParameters.ToString(),
-            Port = -1 // Otherwise the ToString will include the port number?
-        };
-
-        return redirectUri.Uri;
+        _replayValidator = replayValidator;
     }
 
     public async Task<AccessTokenResultBase> GetAccessTokenAsync(string tenantId, string userId)
@@ -58,14 +45,14 @@ public sealed class OAuthTokenProvider
         if (tokenDtoString == default)
         {
             _logger.LogInformation("Underlying store contained no token, returning null");
-            return new NeedsConsentResult();
+            return GetNeedsConsentResult();
         }
 
         var tokenDto = JsonSerializer.Deserialize<OAuthUserTokenDto>(tokenDtoString);
         if (tokenDto == default)
         {
             _logger.LogWarning("Token stored was valid json, but not valid DTO! Did the schema change?");
-            return new NeedsConsentResult();
+            return GetNeedsConsentResult();
         }
 
         _logger.LogInformation(
@@ -86,7 +73,7 @@ public sealed class OAuthTokenProvider
         var jsonBody = await _oAuthServiceClient.RefreshAccessTokenAsync(tokenDto.RefreshToken);
         if (jsonBody == default)
         {
-            return new NeedsConsentResult();
+            return GetNeedsConsentResult();
         }
 
         string accessToken = jsonBody.AccessToken;
@@ -115,17 +102,21 @@ public sealed class OAuthTokenProvider
 
     public async Task ClaimTokenAsync(string accountLinkingToken, string tenantId, string userId, string codeVerifier)
     {
-        var mutableState = await _oAuthStateService.GetMutableStateAsync(accountLinkingToken);
-        if (string.IsNullOrEmpty(mutableState?.OAuthCode))
+        var (acctState, exp) = await _oAuthStateService.GetAsync(accountLinkingToken);
+
+        // ensure the PKCE verifier is correct
+        var codeGuess = Pkce.Base64UrlEncodeSha256(codeVerifier);
+        if (!string.Equals(acctState.CodeChallenge, codeGuess, StringComparison.OrdinalIgnoreCase))
         {
-            throw new Exception("Missing or invalid oauth code, cannot claim");
+            _logger.LogWarning("PKCE verification failed:\nChallenge:{codeChallenge}\nVerifier:{verifier}\nH(Verifier):{guess}", acctState.CodeChallenge, codeVerifier, codeGuess);
+            throw new Exception("PKCE code verification failed");
         }
 
-        await _oAuthStateService.VerifyAsync(
-            accountLinkingToken: accountLinkingToken,
-            codeVerifier: codeVerifier);
+        // ensure this isn't a replay 
+        await _replayValidator.ClaimIdAsync(acctState.Id, exp);
 
-        var oAuthResult = await _oAuthServiceClient.ClaimCodeAsync(mutableState.OAuthCode);
+        // Claim the oauth code from the downstream
+        var oAuthResult = await _oAuthServiceClient.ClaimCodeAsync(acctState.OAuthCode);
         
         var dto = new OAuthUserTokenDto
         {
@@ -143,12 +134,23 @@ public sealed class OAuthTokenProvider
     {
         await _userTokenStore.DeleteTokenAsync(tenantId: tenantId, userId: userId);
     }
+
+    private NeedsConsentResult GetNeedsConsentResult()
+    {
+        return new NeedsConsentResult(new Uri(_options.AuthStartUri));
+    }
 }
 
 public abstract class AccessTokenResultBase {}
 
 public sealed class NeedsConsentResult : AccessTokenResultBase
 {
+    public Uri AuthorizeUri { get; }
+
+    public NeedsConsentResult(Uri authorizeUri)
+    {
+        AuthorizeUri = authorizeUri;
+    }
 }
 
 public sealed class AccessTokenResult : AccessTokenResultBase

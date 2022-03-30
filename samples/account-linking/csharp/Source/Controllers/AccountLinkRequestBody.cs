@@ -2,7 +2,7 @@ using System.Text.Json.Serialization;
 
 namespace Microsoft.Teams.Samples.AccountLinking.Controllers;
 
-public class TokenClaimRequestBody
+public class AccountLinkRequestBody
 {
     [JsonPropertyName("code")]
     public string? Code { get; set; }

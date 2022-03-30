@@ -1,6 +1,6 @@
 using System.ComponentModel.DataAnnotations;
 
-namespace Microsoft.Teams.Samples.AccountLinking.AccountLinkingState;
+namespace Microsoft.Teams.Samples.AccountLinking.State;
 
 /// <summary>
 /// The configuration options for the <see cref="AccountLinkingStateService" />

@@ -57,21 +57,18 @@ async function generatePKCECodes()
   }
 }
 
-async function runUserConsentFlow()
+async function runUserConsentFlow(authorizeUrl)
 {
+  authorizeUrl = authorizeUrl instanceof URL ? authorizeUrl : new URL(authorizeUrl);
+
   // we need to create PKCE code challenge / code verification to both ensure the
   // auth originated from this client and to ensure that the code cannot be claimed by someone else
   // who eavesdrops on the response url
   let { codeVerifier, codeChallenge } = await generatePKCECodes();
 
-  let accessToken = await getAccessToken();
-  let consentRequestUrl = new URL('/accountLinking/authUrl', window.origin);
-  consentRequestUrl.searchParams.append('code_challenge', codeChallenge);
-  const consentUrlResponse = await fetch(consentRequestUrl.toString());
-  const {consentUrl} = await consentUrlResponse.json();
-  let url = new URL(consentUrl);
-  url.searchParams.append('state', codeChallenge); // we'll use the code challenge as our state
-  const authResponse = await openAuthPopup(url);
+  authorizeUrl.searchParams.append('code_challenge', codeChallenge);
+  authorizeUrl.searchParams.append('state', codeChallenge);
+  const authResponse = await openAuthPopup(authorizeUrl);
   var {code, state} = JSON.parse(authResponse);
   if (state != codeChallenge)
   {
@@ -81,10 +78,7 @@ async function runUserConsentFlow()
 
   // now claim the code
   accessToken = await getAccessToken();
-  var claimUrl = new URL('/accountLinking/claim', window.origin);
-  claimUrl.searchParams.append('code', code);
-  claimUrl.searchParams.append('code_verifier', codeVerifier);
-  await fetch('/accountLinking/claim', {
+  await fetch('/accountLinking/link', {
     method: 'PUT',
     headers: new Headers({
       authorization: `Bearer ${accessToken}`,
@@ -134,7 +128,7 @@ async function onLogin()
     var authResponse = await response.json();
     console.log("Need to do the partner auth", { authResponse });
     
-    await runUserConsentFlow();
+    await runUserConsentFlow(authResponse.authorize_url);
     // once the partner auth has completed, the user is logged in, update the UI
     console.log("Finished partner auth, user is now logged in");
     
