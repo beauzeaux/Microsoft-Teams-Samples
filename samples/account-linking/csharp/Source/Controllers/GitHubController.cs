@@ -65,22 +65,4 @@ public sealed class GitHubController : ControllerBase
         _logger.LogWarning("Unknown access token return type: [{type}]", tokenResult.GetType());
         return new StatusCodeResult((int)HttpStatusCode.InternalServerError);
     }
-
-    [HttpPut("logout")]
-    public async Task<IActionResult> LogoutAsync()
-    {
-        var userId = User.FindFirstValue(ClaimConstants.ObjectId);
-        var tenantId = User.FindFirstValue(ClaimConstants.TenantId);
-        if (userId == default)
-        {
-            return new BadRequestObjectResult(new { Error = "Object (User) id in token null or undefined" });
-        }
-        if (tenantId == default)
-        {
-            return new BadRequestObjectResult(new { Error = "Tenant id in token null or undefined" });
-        }
-
-        await _tokenProvider.LogoutAsync(tenantId: tenantId, userId: userId);
-        return new OkResult();
-    }
 }

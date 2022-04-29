@@ -65,6 +65,10 @@ For this example, we'll use the `590a2d6f8b31.ngrok.io` as our domain name.
 ### 2. Provision an Azure AD application for Tab SSO
 Please follow the instructions on [creating an Azure AD application with Tab SSO](https://docs.microsoft.com/en-us/microsoftteams/platform/tabs/how-to/authentication/auth-aad-sso?tabs=dotnet#1-create-your-azure-ad-application). The fully qualified domain name will be the ngrok url from before.
 
+#### 2.1 Configure the app for v2 tokens
+**IMPORTANT** Please ensure the `accessTokenAcceptedVersion` in the `Manifest` blade is set to `2`.
+
+
 Please save for a future step
 1. The `Application (client) id` from the "Overview" blade for the app
 2. A client secret from the "Certificates & secrets" page
@@ -131,6 +135,18 @@ The `StateReplay:Endpoint`, `TokenStorage:Endpoint` values and `KeyRing` section
 This repository uses VSCode [Code Tours](https://marketplace.visualstudio.com/items?itemName=vsls-contrib.codetour#:~:text=A%20%22code%20tour%22%20is%20simply%20a%20series%20of,CONTRIBUTING.md%20file%20and%2For%20rely%20on%20help%20from%20others.) to explain _how_ the code works. 
 
 The tour files can be found in the `.tours` directory.
+
+## OAuth Issues
+
+If you encounter issues with your OAuth2.0 provider missing parameters it should be small changes to the query string parameters involved in the flow. 
+
+### Authorization missing parameters
+Add the parameters to the [OAuthController](./Source/Controllers/OAuthController.cs):58
+
+### Access token request missing parameters
+Add the parameters to the 
+- [OAuthServiceClient](./Source/Services/OAuth/OAuthServiceClient.cs):41 for code flow
+- [OAuthServiceClient](./Source/Services/OAuth/OAuthServiceClient.cs):55 for refresh token flow
 
 ## Further reading
 

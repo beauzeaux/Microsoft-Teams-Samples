@@ -18,7 +18,10 @@ using Microsoft.Teams.Samples.AccountLinking.UserTokenStorage;
 using Microsoft.Teams.Samples.AccountLinking.Bots;
 using Microsoft.Teams.Samples.AccountLinking.Dialogs;
 using Microsoft.Teams.Samples.AccountLinking.State;
+<<<<<<< HEAD
 using Microsoft.Teams.Samples.AccountLinking.SampleClient.Services.Gmail;
+=======
+>>>>>>> 8388910ca98a720e5b2f388830b3de98aa38e124
 
 var builder = WebApplication.CreateBuilder(args);
 var useAzure = builder.Configuration.GetValue<bool>("UseAzure");

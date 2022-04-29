@@ -4,6 +4,7 @@ using Microsoft.Teams.Samples.AccountLinking.OAuth;
 using Microsoft.Identity.Web.Resource;
 using System.Security.Claims;
 using Microsoft.Identity.Web;
+using System.Net;
 
 namespace Microsoft.Teams.Samples.AccountLinking.Controllers;
 
@@ -52,7 +53,7 @@ public sealed class AccountLinkingController : ControllerBase
             userId: userId,
             codeVerifier: tokenClaimRequest.CodeVerifier);
         _logger.LogInformation("Linked GitHub account for: ({userId},{tenantId})", userId, tenantId);
-        return new OkResult();
+        return new StatusCodeResult((int)HttpStatusCode.NoContent);
     }
 
     [Authorize]
@@ -65,6 +66,6 @@ public sealed class AccountLinkingController : ControllerBase
 
         await _tokenProvider.LogoutAsync(tenantId: tenantId, userId: userId);
 
-        return new OkResult();
+        return new StatusCodeResult((int)HttpStatusCode.NoContent);
     }
 }

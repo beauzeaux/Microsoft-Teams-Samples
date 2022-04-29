@@ -63,6 +63,7 @@ public sealed class OAuthController : ControllerBase
         oauthQueryParameters.Add("response_type", "code");
         // respective provider's/api's scope
         oauthQueryParameters.Add("scope", "https://mail.google.com/");
+
         var redirectUriBuilder = new UriBuilder(_options.AuthorizeUrl)
         {
             Query = oauthQueryParameters.ToString()

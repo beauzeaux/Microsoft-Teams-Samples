@@ -100,8 +100,8 @@ async function onLogout() {
   const accessToken = await getAccessToken();
 
   // Issue the request to the backend to log out the user. 
-  await fetch('/github/logout', {
-    method: 'PUT',
+  await fetch('/accountLinking/link', {
+    method: 'DELETE',
     headers: new Headers({
       authorization: `Bearer ${accessToken}`
     })
