@@ -3,7 +3,6 @@
     "version": "1.0.0",
     "manifestVersion": "1.12",
     "id": "19b5d434-5d4b-47a8-800f-446b6a010ba2",
-    "packageName": "com.package.name",
     "name": {
         "short": "GitHub account linking sample",
         "full": "GitHub account linking sample"
